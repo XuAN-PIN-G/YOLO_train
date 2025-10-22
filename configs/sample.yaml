@@ -1,0 +1,15 @@
+dataset:
+  name: custom-project
+  provider: kaggle  # Supports 'kaggle' or 'local'
+  slug: owner/dataset-name  # Kaggle dataset identifier; leave empty when provider is local
+  local_dir: data/custom_dataset  # Dataset storage path; customize as needed
+  classes:
+    - class-a
+    - class-b
+
+training:
+  model: yolov8n.pt
+  imgsz: 640
+  batch: 16
+  epochs: 100
+  device: cpu
