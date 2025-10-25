@@ -5,7 +5,7 @@ YOLO_train provides a reusable YOLOv8 training scaffold. It keeps the original a
 ## Key Features
 
 - **Configuration-driven**: define dataset locations, class names, and training hyperparameters through one YAML file.
-- **Automated data pipeline**: optionally downloads Kaggle datasets, reshapes directory layouts, and generates the Ultralytics `data.yaml`.
+- **Automated data pipeline**: dedicated scripts cover download, formatting, data prep, and training, and can be chained via `scripts/run_pipeline.py`.
 - **Plug-and-play**: supports every YOLOv8 checkpoint (`yolov8n.pt` → `yolov8x.pt`) across CPU, CUDA, and MPS backends.
 - **Extensible design**: modular scripts make it easy to integrate into CI/CD or extend for custom workflows.
 
@@ -21,7 +21,8 @@ YOLO_train/
 │   ├── auto_format_dataset.py
 │   ├── download_dataset.py
 │   ├── prepare_data.py
-│   └── train.py
+│   ├── train.py
+│   └── run_pipeline.py
 ├── requirements.txt
 └── README.md
 ```
@@ -44,27 +45,49 @@ YOLO_train/
 
    Adjust the `dataset` and `training` sections to fit your dataset (details below).
 
-3. **Download or prepare the dataset (optional)**
+3. **Run the full pipeline (optional but recommended)**
 
-   For Kaggle-hosted datasets that are not yet downloaded:
+   ```bash
+   python scripts/run_pipeline.py --config configs/my_dataset.yaml
+   ```
+
+   Use `--env-file` to point to Kaggle credentials or `--skip-*` flags to bypass specific stages.
+
+4. **Prepare the dataset manually (when skipping the pipeline)**
+
+   a. Download (Kaggle only):
 
    ```bash
    python scripts/download_dataset.py --config configs/my_dataset.yaml
    ```
 
-   If the dataset already exists locally, ensure it follows the Ultralytics layout (see next section), or run:
+   b. Format (only required if the dataset is not already in YOLO layout):
+
+   ```bash
+   python scripts/auto_format_dataset.py --base-dir data/custom_dataset
+   ```
+
+   c. Generate `data.yaml` (required for every dataset):
 
    ```bash
    python scripts/prepare_data.py --config configs/my_dataset.yaml
    ```
 
-4. **Start training**
+5. **Start training (requires that `data.yaml` already exists)**
 
    ```bash
    python scripts/train.py --config configs/my_dataset.yaml
    ```
 
    Training logs and checkpoints will appear in the `runs/` directory.
+
+## Workflow Scripts
+
+- `scripts/download_dataset.py`: downloads Kaggle-hosted datasets into `local_dir` (no formatting or YAML generation).
+- `scripts/auto_format_dataset.py`: restructures mixed image/label folders into the YOLO `train/` and `val/` layout.
+- `scripts/prepare_data.py`: inspects the prepared dataset and writes the Ultralytics `data.yaml`.
+- `scripts/train.py`: loads hyperparameters from the config and runs YOLO training using the existing `data.yaml` (will exit if it is missing).
+- `scripts/run_pipeline.py`: orchestrates the four stages above so they execute in sequence with optional skip flags.
 
 ## Configuration
 

@@ -1,10 +1,10 @@
 """
-Download and prepare datasets for the YOLO_train pipeline.
+Download raw datasets for the YOLO training workflow.
 
-The script reads a configuration file that declares how to obtain a dataset.
-When the provider is set to "kaggle", it authenticates via Kaggle API, downloads
-the archive, expands it into the configured directory, optionally reshapes the
-layout, and finally writes a Ultralytics-compatible ``data.yaml`` file.
+This script strictly focuses on fetching dataset assets. When the dataset
+provider is ``kaggle`` it authenticates via the Kaggle API, downloads the
+archive, and expands it into the configured ``local_dir``. Other providers are
+treated as already-present datasets so no files are modified.
 
 Usage:
     python scripts/download_dataset.py --config configs/sample.yaml
@@ -13,8 +13,6 @@ Usage:
 
 import argparse
 import os
-import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -63,7 +61,7 @@ def download_kaggle_dataset(slug: str, dest_dir: Path) -> None:
     api = KaggleApi()
     try:
         api.authenticate()
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover - handles CLI auth failures
         raise RuntimeError(
             "Failed to authenticate with Kaggle API. Ensure credentials are configured."
         ) from exc
@@ -72,7 +70,6 @@ def download_kaggle_dataset(slug: str, dest_dir: Path) -> None:
     print(f"Downloading Kaggle dataset '{slug}' to '{dest_dir}' …")
     api.dataset_download_files(slug, path=str(dest_dir), unzip=True)
 
-    # Remove any leftover archives to keep the directory tidy.
     for archive in dest_dir.glob("*.zip"):
         try:
             archive.unlink()
@@ -80,68 +77,8 @@ def download_kaggle_dataset(slug: str, dest_dir: Path) -> None:
             pass
 
 
-def auto_format_if_needed(dataset_dir: Path) -> None:
-    """Invoke the helper script to reshape datasets that are not in YOLO format."""
-    train_images = dataset_dir / "train" / "images"
-    val_images = dataset_dir / "val" / "images"
-    test_images = dataset_dir / "test" / "images"
-
-    if train_images.exists() and (val_images.exists() or test_images.exists()):
-        return
-
-    print("Dataset layout not in YOLO format. Attempting automatic formatting …")
-    subprocess.run(
-        [
-            sys.executable,
-            str(Path(__file__).parent / "auto_format_dataset.py"),
-            "--base-dir",
-            str(dataset_dir),
-        ],
-        check=True,
-    )
-
-
-def generate_data_yaml(dataset_cfg: Dict[str, Any], dataset_dir: Path) -> Path:
-    """Generate Ultralytics data.yaml from configuration meta."""
-    classes = dataset_cfg.get("classes")
-    if not classes:
-        raise ValueError("No classes declared in configuration. Populate dataset.classes.")
-
-    auto_format_if_needed(dataset_dir)
-
-    train_dir = dataset_dir / "train" / "images"
-    val_dir = dataset_dir / "val" / "images"
-    test_dir = dataset_dir / "test" / "images"
-
-    if not train_dir.exists():
-        raise FileNotFoundError(
-            f"Training directory '{train_dir}' not found after formatting. Inspect your dataset."
-        )
-
-    if val_dir.exists():
-        val_images = val_dir
-    elif test_dir.exists():
-        val_images = test_dir
-        print("Warning: 'val' split not found. Using 'test/images' for validation.")
-    else:
-        val_images = train_dir
-        print("Warning: validation split missing. Reusing training images as fallback.")
-
-    data = {
-        "train": str(train_dir.resolve()),
-        "val": str(val_images.resolve()),
-        "nc": len(classes),
-        "names": classes,
-    }
-
-    out_path = dataset_dir / "data.yaml"
-    with open(out_path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(data, f, sort_keys=False)
-    return out_path
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Download and prepare datasets for YOLO training")
+    parser = argparse.ArgumentParser(description="Download datasets required for YOLO training")
     parser.add_argument(
         "--config",
         type=str,
@@ -179,18 +116,11 @@ def main() -> None:
         except RuntimeError as exc:
             print(str(exc))
             sys.exit(1)
+        print(f"Dataset downloaded to '{dataset_dir.resolve()}'.")
     else:
         print(
-            f"Provider '{provider}' is treated as local. Ensure the dataset is already present at '{dataset_dir}'."
+            f"Provider '{provider}' treated as local. Ensure the dataset already exists at '{dataset_dir.resolve()}'."
         )
-
-    try:
-        data_yaml = generate_data_yaml(dataset_cfg, dataset_dir)
-    except (FileNotFoundError, ValueError, subprocess.CalledProcessError) as exc:
-        print(str(exc))
-        sys.exit(1)
-
-    print(f"Generated data.yaml at {data_yaml}")
 
 
 if __name__ == "__main__":

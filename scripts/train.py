@@ -1,17 +1,15 @@
 """
 Train a YOLOv8 model using a configuration-driven workflow.
 
-The script keeps the original automation logic intact while abstracting away
-dataset-specific assumptions. Provide a single YAML configuration that defines
-where the dataset lives, how to obtain it, and which training hyperparameters
-to use. See ``configs/sample.yaml`` for the expected schema.
+This script is dedicated to the training stage. It assumes that the dataset
+directory already contains a ``data.yaml`` file prepared by ``prepare_data.py``
+or by the orchestration pipeline.
 
 Usage:
     python scripts/train.py --config configs/sample.yaml
 """
 
 import argparse
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -31,33 +29,14 @@ def load_config(path: Path) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
-def ensure_dataset(cfg_path: Path, dataset_cfg: Dict[str, Any]) -> Path:
-    """Validate dataset availability; trigger download or preparation if needed."""
+def resolve_data_yaml(dataset_cfg: Dict[str, Any]) -> Path:
+    """Locate the prepared data.yaml file before training."""
     dataset_dir = Path(dataset_cfg.get("local_dir", "data"))
     data_yaml = dataset_dir / "data.yaml"
-    if data_yaml.exists():
-        return data_yaml
-
-    provider = dataset_cfg.get("provider", "local")
-    scripts_dir = Path(__file__).parent
-
-    print(f"Dataset not found at '{dataset_dir}'. Attempting automated preparation …")
-    if provider == "kaggle":
-        print("Invoking download_dataset.py to download and prepare the dataset …")
-        subprocess.run(
-            [sys.executable, str(scripts_dir / "download_dataset.py"), "--config", str(cfg_path)],
-            check=True,
-        )
-    else:
-        print("Invoking prepare_data.py to generate data.yaml …")
-        subprocess.run(
-            [sys.executable, str(scripts_dir / "prepare_data.py"), "--config", str(cfg_path)],
-            check=True,
-        )
-
-    if not data_yaml.exists():
+    if not data_yaml.is_file():
         raise FileNotFoundError(
-            f"data.yaml still not found at '{data_yaml}'. Verify your dataset path and configuration."
+            f"data.yaml not found at '{data_yaml}'. "
+            "Run scripts/prepare_data.py or the pipeline script before training."
         )
     return data_yaml
 
@@ -82,9 +61,9 @@ def main() -> None:
     training_cfg = cfg.get("training", {})
 
     try:
-        data_yaml = ensure_dataset(cfg_path, dataset_cfg)
-    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
-        print(f"Dataset preparation failed: {exc}")
+        data_yaml = resolve_data_yaml(dataset_cfg)
+    except FileNotFoundError as exc:
+        print(f"Dataset preparation incomplete: {exc}")
         sys.exit(1)
 
     model_name = training_cfg.get("model", "yolov8s.pt")
